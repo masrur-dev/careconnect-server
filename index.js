@@ -2,6 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose");
 require("dotenv").config();
 
 // =====================================
@@ -16,6 +17,7 @@ app.use(
   cors({
     origin: CLIENT_URL,
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -46,45 +48,70 @@ const isValidEventId = (id) => {
 };
 
 // =====================================
-// BETTER AUTH SESSION VERIFICATION
+// BETTER AUTH JWT VERIFICATION
 // =====================================
+
+// JWKS published by the Next.js app (Better Auth `jwt` plugin at
+// /api/auth/jwks). createRemoteJWKSet fetches lazily on first verify and
+// caches keys — nothing hits the network at startup (important on Render).
+const jwksUri = `${CLIENT_URL}/api/auth/jwks`;
+const jwks = createRemoteJWKSet(new URL(jwksUri));
+
+// Better Auth signs issuer/audience from BETTER_AUTH_URL; CLIENT_URL must be
+// the same origin (set JWT_ISSUER only if you need to override the check).
+const toOrigin = (value) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
+};
+
+const expectedIssuer = toOrigin(
+  process.env.JWT_ISSUER || CLIENT_URL
+);
 
 const verifyUser = async (req, res, next) => {
   try {
-    const cookie = req.headers.cookie;
+    const header = req.headers.authorization || "";
+    const [scheme, token] = header.split(" ");
 
-    if (!cookie) {
+    if (scheme !== "Bearer" || !token) {
       return res.status(401).json({
         message: "Please login first",
       });
     }
 
-    const response = await fetch(
-      `${CLIENT_URL}/api/auth/get-session`,
-      {
-        method: "GET",
-        headers: {
-          cookie,
-        },
-        cache: "no-store",
-      }
-    );
+    let payload;
 
-    if (!response.ok) {
-      return res.status(503).json({
-        message: "Unable to verify login session",
+    try {
+      const result = await jwtVerify(token, jwks, {
+        issuer: expectedIssuer,
+        audience: expectedIssuer,
       });
-    }
 
-    const session = await response.json();
+      payload = result.payload;
+    } catch (jwtError) {
+      console.warn("JWT verification failed:", jwtError.message);
 
-    if (!session?.user?.id || !session?.user?.email) {
       return res.status(401).json({
         message: "Unauthorized. Please login again.",
       });
     }
 
-    req.authUser = session.user;
+    if (!payload?.sub || !payload?.email) {
+      return res.status(401).json({
+        message: "Unauthorized. Please login again.",
+      });
+    }
+
+    // Identity comes only from the verified token — never from the client.
+    req.authUser = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.name || "",
+      image: payload.image || null,
+    };
 
     next();
   } catch (error) {
