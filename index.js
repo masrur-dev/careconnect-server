@@ -542,7 +542,11 @@ app.get("/my-events", verifyUser, async (req, res) => {
   try {
     const events = await eventsCollection
       .find({
-        creatorEmail: req.authUser.email,
+        // Match by verified user id; keep email fallback for legacy events
+        $or: [
+          { creatorId: req.authUser.id },
+          { creatorEmail: req.authUser.email },
+        ],
       })
       .sort({ createdAt: -1 })
       .toArray();
