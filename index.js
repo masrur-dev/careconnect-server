@@ -47,6 +47,10 @@ const isValidEventId = (id) => {
   return /^[a-fA-F0-9]{24}$/.test(id);
 };
 
+const escapeRegex = (value) => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
 // =====================================
 // BETTER AUTH JWT VERIFICATION
 // =====================================
@@ -165,10 +169,33 @@ async function run() {
 
     app.get("/events", async (req, res) => {
       try {
+        const search =
+          typeof req.query.search === "string"
+            ? req.query.search.trim().slice(0, 100)
+            : "";
+        const eventType =
+          typeof req.query.type === "string"
+            ? req.query.type.trim()
+            : "";
+        const filters = [{ eventDate: { $gt: getToday() } }];
+
+        if (search) {
+          const searchRegex = new RegExp(escapeRegex(search), "i");
+          filters.push({
+            $or: [
+              { title: searchRegex },
+              { description: searchRegex },
+              { location: searchRegex },
+            ],
+          });
+        }
+
+        if (eventType) {
+          filters.push({ eventType: new RegExp(`^${escapeRegex(eventType)}$`, "i") });
+        }
+
         const events = await eventsCollection
-          .find({
-            eventDate: { $gt: getToday() },
-          })
+          .find({ $and: filters })
           .sort({ eventDate: 1 })
           .toArray();
 
