@@ -410,6 +410,35 @@ async function run() {
 // ++++++++++
 
     // =====================================
+    // DELETE - LEAVE EVENT
+    // PRIVATE API
+    // =====================================
+
+    app.delete("/events/:id/join", verifyUser, async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        if (!isValidEventId(id)) {
+          return res.status(400).json({ message: "Invalid Event ID" });
+        }
+
+        const result = await participantsCollection.deleteOne({
+          eventId: new ObjectId(id),
+          userId: req.authUser.id,
+        });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: "You have not joined this event" });
+        }
+
+        return res.status(200).json({ message: "You have left the event" });
+      } catch (error) {
+        console.error("Failed to leave event:", error);
+        return res.status(500).json({ message: "Failed to leave event" });
+      }
+    });
+
+    // =====================================
     // GET - CHECK JOIN STATUS
     // PRIVATE API
     // =====================================
