@@ -754,6 +754,40 @@ app.get("/my-events", verifyUser, async (req, res) => {
 //
 
     // =====================================
+    // GET - HOMEPAGE STATISTICS (PUBLIC)
+    // =====================================
+
+    app.get("/stats", async (req, res) => {
+      try {
+        const today = getToday();
+
+        const [upcomingEvents, totalEvents, participations, members] =
+          await Promise.all([
+            eventsCollection.countDocuments({
+              eventDate: { $gt: today },
+            }),
+            eventsCollection.countDocuments(),
+            participantsCollection.countDocuments(),
+            // Better Auth stores users in the `user` collection
+            database.collection("user").countDocuments(),
+          ]);
+
+        return res.status(200).json({
+          upcomingEvents,
+          totalEvents,
+          participations,
+          members,
+        });
+      } catch (error) {
+        console.error("Failed to fetch stats:", error);
+
+        return res.status(500).json({
+          message: "Failed to load statistics",
+        });
+      }
+    });
+
+    // =====================================
     // START EXPRESS SERVER
     // =====================================
 
